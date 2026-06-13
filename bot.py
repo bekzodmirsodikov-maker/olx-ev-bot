@@ -12,15 +12,15 @@ SEEN_FILE="seen_ads.json"
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s",handlers=[logging.StreamHandler()])
 log=logging.getLogger(__name__)
 
-EV_BRANDS=["tesla","byd","nio","zeekr","xpeng","avatr","enovate","voyah","leapmotor","aito","denza","deepal","lynk","ora","li auto","lixiang"]
+EV_BRANDS=["tesla","byd","nio","zeekr","xpeng","avatr","enovate","voyah","leapmotor","aito","denza","deepal","lynk","ora","hongqi","lixiang","wuling","jaecoo","omoda"]
 
-BASE_URL="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&sort_by=created_at%3Adesc"
+SEARCH_URL="https://www.olx.uz/transport/legkovye-avtomobili/?currency=UZS"
 HEADERS={
-    "User-Agent":"Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
-    "Accept":"application/json",
-    "Accept-Language":"ru-RU,ru;q=0.9",
-    "Origin":"https://www.olx.uz",
-    "Referer":"https://www.olx.uz/transport/legkovye-avtomobili/",
+    "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language":"ru-RU,ru;q=0.9,uz;q=0.8",
+    "Accept-Encoding":"gzip, deflate, br",
+    "Connection":"keep-alive",
 }
 
 def load_seen():
@@ -34,55 +34,53 @@ def save_seen(seen):
         json.dump(list(seen),f,ensure_ascii=False)
 
 def is_ev(title):
-    t=title.lower()
-    return any(brand in t for brand in EV_BRANDS)
+    return any(b in title.lower() for b in EV_BRANDS)
 
 def fetch_ads():
     ads=[]
     try:
-        r=requests.get(BASE_URL,headers=HEADERS,timeout=30)
+        r=requests.get(SEARCH_URL,headers=HEADERS,timeout=30)
         log.info(f"OLX status: {r.status_code}")
         if r.status_code!=200:
             log.error(f"OLX xato: {r.status_code}")
             return ads
-        data=r.json().get("data",[])
-        log.info(f"Jami e'lonlar: {len(data)}")
-        for o in data:
+        soup=BeautifulSoup(r.text,"html.parser")
+        # Next.js __NEXT_DATA__ dan ma'lumot olamiz
+        script=soup.find("script",{"id":"__NEXT_DATA__"})
+        if not script:
+            log.error("__NEXT_DATA__ topilmadi")
+            return ads
+        data=json.loads(script.string)
+        offers=data.get("props",{}).get("pageProps",{}).get("ads",{}).get("ads",[])
+        log.info(f"Jami e'lonlar: {len(offers)}")
+        for o in offers:
             try:
                 title=o.get("title","")
                 if not is_ev(title):
                     continue
                 ad_id=str(o.get("id",""))
-                price_obj=o.get("price",{})or{}
-                price=price_obj.get("display_value") or str(price_obj.get("value","Narx yo'q"))
+                price=o.get("price","Narx yo'q")
+                if isinstance(price,dict):
+                    price=price.get("displayValue") or price.get("value","Narx yo'q")
                 link=o.get("url","")
                 if link and not link.startswith("http"):
                     link="https://www.olx.uz"+link
                 photos=o.get("photos",[])or[]
-                image=""
-                if photos:
-                    img=photos[0]
-                    image=img.get("link","")or img.get("url","")
-                    image=image.replace("{width}","600")
-                loc=o.get("location",{})or{}
-                city=(loc.get("city",{})or{}).get("name","")
-                region=(loc.get("region",{})or{}).get("name","")
-                location=city or region
-                created=o.get("created_time","")
+                image=photos[0] if photos and isinstance(photos[0],str) else ""
+                if not image and photos and isinstance(photos[0],dict):
+                    image=photos[0].get("link","")
+                location=o.get("location","")
+                if isinstance(location,dict):
+                    location=location.get("cityName") or location.get("regionName","")
+                created=o.get("createdTime") or o.get("created_time","")
                 try:
-                    dt=datetime.fromisoformat(created.replace("Z","+00:00"))
+                    dt=datetime.fromisoformat(str(created).replace("Z","+00:00"))
                     date_str=dt.strftime("%d.%m.%Y %H:%M")
                 except:
-                    date_str=created[:10] if created else ""
-                params={}
-                for p in o.get("params",[])or[]:
-                    k=p.get("key","")
-                    v=(p.get("value",{})or{})
-                    lbl=v.get("label")or v.get("key","")
-                    if k and lbl:params[k]=lbl
+                    date_str=str(created)[:10] if created else ""
                 if ad_id:
-                    ads.append({"id":ad_id,"title":title,"price":price,"link":link,
-                                "image":image,"location":location,"date":date_str,"params":params})
+                    ads.append({"id":ad_id,"title":title,"price":str(price),"link":link,
+                                "image":image,"location":str(location),"date":date_str,"params":{}})
             except Exception as e:
                 log.warning(f"Parse xato: {e}")
         log.info(f"Elektromobillar: {len(ads)} ta")
@@ -91,11 +89,7 @@ def fetch_ads():
     return ads
 
 def caption(ad):
-    p=ad.get("params",{})or{}
     lines=["⚡️ *ELEKTROMOBIL E'LONI*","",f"🚗 *{ad['title']}*",f"💰 *Narx:* {ad['price']}"]
-    if p.get("year"):lines.append(f"📆 *Yil:* {p['year']}")
-    if p.get("mileage"):lines.append(f"🛣 *Yurish:* {p['mileage']}")
-    if p.get("color"):lines.append(f"🎨 *Rang:* {p['color']}")
     if ad.get("location"):lines.append(f"📍 *Joylashuv:* {ad['location']}")
     if ad.get("date"):lines.append(f"📅 *Sana:* {ad['date']}")
     lines+=["",f"🔗 [E'lonni ko'rish]({ad['link']})"]
@@ -114,7 +108,7 @@ async def send_ad(bot,ad):
         log.info(f"✅ Yuborildi: {ad['title']}")
         await asyncio.sleep(4)
     except TelegramError as e:
-        log.error(f"❌ Telegram xato: {e}")
+        log.error(f"❌ {e}")
 
 async def main():
     bot=Bot(token=BOT_TOKEN)

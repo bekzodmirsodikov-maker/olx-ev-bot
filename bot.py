@@ -1,4 +1,5 @@
 import os,json,logging,asyncio,requests
+from bs4 import BeautifulSoup
 from telegram import Bot
 from telegram.error import TelegramError
 from datetime import datetime
@@ -11,7 +12,9 @@ SEEN_FILE="seen_ads.json"
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s",handlers=[logging.StreamHandler()])
 log=logging.getLogger(__name__)
 
-OLX_URL="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&filter_enum_fuel_type%5B0%5D=electric"
+EV_BRANDS=["tesla","byd","nio","zeekr","xpeng","avatr","enovate","voyah","leapmotor","aito","denza","deepal","lynk","ora","li auto","lixiang"]
+
+BASE_URL="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&sort_by=created_at%3Adesc"
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
     "Accept":"application/json",
@@ -30,10 +33,14 @@ def save_seen(seen):
     with open(SEEN_FILE,"w",encoding="utf-8") as f:
         json.dump(list(seen),f,ensure_ascii=False)
 
+def is_ev(title):
+    t=title.lower()
+    return any(brand in t for brand in EV_BRANDS)
+
 def fetch_ads():
     ads=[]
     try:
-        r=requests.get(OLX_URL,headers=HEADERS,timeout=30)
+        r=requests.get(BASE_URL,headers=HEADERS,timeout=30)
         log.info(f"OLX status: {r.status_code}")
         if r.status_code!=200:
             log.error(f"OLX xato: {r.status_code}")
@@ -42,8 +49,10 @@ def fetch_ads():
         log.info(f"Jami e'lonlar: {len(data)}")
         for o in data:
             try:
+                title=o.get("title","")
+                if not is_ev(title):
+                    continue
                 ad_id=str(o.get("id",""))
-                title=o.get("title","Noma'lum")
                 price_obj=o.get("price",{})or{}
                 price=price_obj.get("display_value") or str(price_obj.get("value","Narx yo'q"))
                 link=o.get("url","")
@@ -76,6 +85,7 @@ def fetch_ads():
                                 "image":image,"location":location,"date":date_str,"params":params})
             except Exception as e:
                 log.warning(f"Parse xato: {e}")
+        log.info(f"Elektromobillar: {len(ads)} ta")
     except Exception as e:
         log.error(f"Fetch xato: {e}")
     return ads

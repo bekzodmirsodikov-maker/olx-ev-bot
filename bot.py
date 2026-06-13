@@ -62,10 +62,12 @@ def fetch_page(url):
     try:
         r=requests.get(url,headers=HEADERS,timeout=30)
         if r.status_code!=200:
+            log.warning(f"Status {r.status_code}: {url}")
             return ads
         soup=BeautifulSoup(r.text,"html.parser")
         script=soup.find("script",{"id":"__NEXT_DATA__"})
         if not script:
+            log.warning(f"__NEXT_DATA__ topilmadi: {url}")
             return ads
         data=json.loads(script.string)
         offers=(data.get("props",{}).get("pageProps",{})
@@ -102,7 +104,7 @@ def fetch_page(url):
             except Exception as e:
                 log.warning(f"Parse xato: {e}")
     except Exception as e:
-        log.error(f"Sahifa xato {url}: {e}")
+        log.error(f"Sahifa xato: {e}")
     return ads
 
 def fetch_ads():
@@ -114,7 +116,6 @@ def fetch_ads():
             if ad["id"] not in seen_ids:
                 seen_ids.add(ad["id"])
                 all_ads.append(ad)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0))
     log.info(f"Jami elektromobillar: {len(all_ads)} ta")
     return all_ads
 

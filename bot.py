@@ -22,8 +22,7 @@ def fetch_ads():
             "Origin":"https://www.olx.uz",
             "Referer":"https://www.olx.uz/transport/legkovye-avtomobili/",
         })
-       url="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&filter_enum_fuel_type[0]=electric"
-        r=session.get(url,timeout=30)
+url="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&filter_enum_fuel_type%5B0%5D=electric"        r=session.get(url,timeout=30)
         log.info(f"OLX status: {r.status_code}")
         if r.status_code!=200:
             log.error(f"OLX javob bermadi: {r.status_code} — {r.text[:200]}")

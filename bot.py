@@ -11,21 +11,32 @@ SEEN_FILE="seen_ads.json"
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s",handlers=[logging.StreamHandler()])
 log=logging.getLogger(__name__)
 
+OLX_URL="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&filter_enum_fuel_type%5B0%5D=electric"
+HEADERS={
+    "User-Agent":"Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
+    "Accept":"application/json",
+    "Accept-Language":"ru-RU,ru;q=0.9",
+    "Origin":"https://www.olx.uz",
+    "Referer":"https://www.olx.uz/transport/legkovye-avtomobili/",
+}
+
+def load_seen():
+    if os.path.exists(SEEN_FILE):
+        with open(SEEN_FILE,"r",encoding="utf-8") as f:
+            return set(json.load(f))
+    return set()
+
+def save_seen(seen):
+    with open(SEEN_FILE,"w",encoding="utf-8") as f:
+        json.dump(list(seen),f,ensure_ascii=False)
+
 def fetch_ads():
     ads=[]
     try:
-        session=requests.Session()
-        session.headers.update({
-            "User-Agent":"Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36",
-            "Accept":"application/json, text/plain, */*",
-            "Accept-Language":"ru-RU,ru;q=0.9",
-            "Origin":"https://www.olx.uz",
-            "Referer":"https://www.olx.uz/transport/legkovye-avtomobili/",
-        })
-url="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&filter_enum_fuel_type%5B0%5D=electric"        r=session.get(url,timeout=30)
+        r=requests.get(OLX_URL,headers=HEADERS,timeout=30)
         log.info(f"OLX status: {r.status_code}")
         if r.status_code!=200:
-            log.error(f"OLX javob bermadi: {r.status_code} — {r.text[:200]}")
+            log.error(f"OLX xato: {r.status_code}")
             return ads
         data=r.json().get("data",[])
         log.info(f"Jami e'lonlar: {len(data)}")
@@ -64,7 +75,7 @@ url="https://www.olx.uz/api/v1/offers/?offset=0&limit=50&category_id=108&filter_
                     ads.append({"id":ad_id,"title":title,"price":price,"link":link,
                                 "image":image,"location":location,"date":date_str,"params":params})
             except Exception as e:
-                log.warning(f"E'lon parse xato: {e}")
+                log.warning(f"Parse xato: {e}")
     except Exception as e:
         log.error(f"Fetch xato: {e}")
     return ads
@@ -79,16 +90,6 @@ def caption(ad):
     if ad.get("date"):lines.append(f"📅 *Sana:* {ad['date']}")
     lines+=["",f"🔗 [E'lonni ko'rish]({ad['link']})"]
     return "\n".join(lines)
-
-def load_seen():
-    if os.path.exists(SEEN_FILE):
-        with open(SEEN_FILE,"r",encoding="utf-8") as f:
-            return set(json.load(f))
-    return set()
-
-def save_seen(seen):
-    with open(SEEN_FILE,"w",encoding="utf-8") as f:
-        json.dump(list(seen),f,ensure_ascii=False)
 
 async def send_ad(bot,ad):
     txt=caption(ad)

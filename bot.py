@@ -14,25 +14,26 @@ log=logging.getLogger(__name__)
 
 EV_BRANDS=["tesla","byd","nio","zeekr","xpeng","avatr","enovate","voyah","leapmotor","aito","denza","deepal","lynk","ora","hongqi","lixiang","wuling","jaecoo","omoda"]
 
-PAGES=[
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-tesla/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-byd/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-zeekr/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-xpeng/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-nio/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-leapmotor/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-lixiang/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-voyah/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-avatr/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-aito/",
-    "https://www.olx.uz/transport/legkovye-avtomobili/q-denza/",
-]
-
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language":"ru-RU,ru;q=0.9,uz;q=0.8",
+    "Accept-Language":"ru-RU,ru;q=0.9",
+    "Connection":"keep-alive",
 }
+
+SEARCH_URLS=[
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=tesla",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=byd",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=zeekr",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=xpeng",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=nio",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=leapmotor",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=lixiang",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=voyah",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=avatr",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=aito",
+    "https://www.olx.uz/transport/legkovye-avtomobili/?search[filter_enum_make][0]=denza",
+]
 
 def load_seen():
     if os.path.exists(SEEN_FILE):
@@ -44,85 +45,63 @@ def save_seen(seen):
     with open(SEEN_FILE,"w",encoding="utf-8") as f:
         json.dump(list(seen),f,ensure_ascii=False)
 
-def get_price(o):
-    p=o.get("price",None)
-    if p is None:
-        return "Narx ko'rsatilmagan"
-    if isinstance(p,str):
-        return p if p else "Narx ko'rsatilmagan"
-    if isinstance(p,dict):
-        val=p.get("displayValue") or p.get("regularPrice",{}).get("value","") or p.get("value","")
-        cur=p.get("currency","")
-        if val:
-            return f"{val} {cur}".strip()
-    return "Narx ko'rsatilmagan"
+def is_ev(title):
+    return any(b in title.lower() for b in EV_BRANDS)
+
+def parse_card(card):
+    try:
+        title_t=card.select_one("h4,h3,[data-cy='ad-title']")
+        title=title_t.get_text(strip=True) if title_t else ""
+        if not title or not is_ev(title):
+            return None
+        link_t=card.select_one("a[href]")
+        href=link_t["href"] if link_t else ""
+        link=href if href.startswith("http") else "https://www.olx.uz"+href
+        ad_id=link.rstrip("/").split("-")[-1]
+        price_t=card.select_one("[data-testid='ad-price'],[class*='price']")
+        price=price_t.get_text(strip=True) if price_t else "Narx ko'rsatilmagan"
+        img_t=card.select_one("img[src]")
+        image=img_t["src"] if img_t else ""
+        if image.startswith("//"):
+            image="https:"+image
+        loc_t=card.select_one("[class*='location'],[data-testid='location-date']")
+        location=loc_t.get_text(strip=True) if loc_t else ""
+        return {"id":ad_id,"title":title,"price":price,"link":link,"image":image,"location":location,"date":""}
+    except:
+        return None
 
 def fetch_page(url):
     ads=[]
     try:
         r=requests.get(url,headers=HEADERS,timeout=30)
+        log.info(f"Status {r.status_code}: {url[-40:]}")
         if r.status_code!=200:
-            log.warning(f"Status {r.status_code}: {url}")
             return ads
         soup=BeautifulSoup(r.text,"html.parser")
-        script=soup.find("script",{"id":"__NEXT_DATA__"})
-        if not script:
-            log.warning(f"__NEXT_DATA__ topilmadi: {url}")
-            return ads
-        data=json.loads(script.string)
-        offers=(data.get("props",{}).get("pageProps",{})
-                .get("ads",{}).get("ads",[]))
-        for o in offers:
-            try:
-                title=o.get("title","")
-                ad_id=str(o.get("id",""))
-                price=get_price(o)
-                link=o.get("url","")
-                if link and not link.startswith("http"):
-                    link="https://www.olx.uz"+link
-                photos=o.get("photos",[])or[]
-                image=""
-                if photos:
-                    if isinstance(photos[0],str):
-                        image=photos[0]
-                    elif isinstance(photos[0],dict):
-                        image=photos[0].get("link","")or photos[0].get("url","")
-                loc=o.get("location","")
-                if isinstance(loc,dict):
-                    location=loc.get("cityName","")or loc.get("regionName","")
-                else:
-                    location=str(loc)
-                created=o.get("createdTime","")or o.get("created_time","")
-                try:
-                    dt=datetime.fromisoformat(str(created).replace("Z","+00:00"))
-                    date_str=dt.strftime("%d.%m.%Y %H:%M")
-                except:
-                    date_str=str(created)[:10] if created else ""
-                if ad_id:
-                    ads.append({"id":ad_id,"title":title,"price":price,"link":link,
-                                "image":image,"location":location,"date":date_str})
-            except Exception as e:
-                log.warning(f"Parse xato: {e}")
+        cards=soup.select("div[data-cy='l-card'],div[class*='listing-grid-item']")
+        log.info(f"Kartochkalar: {len(cards)}")
+        for card in cards:
+            ad=parse_card(card)
+            if ad:
+                ads.append(ad)
     except Exception as e:
-        log.error(f"Sahifa xato: {e}")
+        log.error(f"Fetch xato: {e}")
     return ads
 
 def fetch_ads():
     all_ads=[]
     seen_ids=set()
-    for url in PAGES:
-        ads=fetch_page(url)
-        for ad in ads:
+    for url in SEARCH_URLS:
+        for ad in fetch_page(url):
             if ad["id"] not in seen_ids:
                 seen_ids.add(ad["id"])
                 all_ads.append(ad)
-    log.info(f"Jami elektromobillar: {len(all_ads)} ta")
+    log.info(f"Jami: {len(all_ads)} ta elektromobil")
     return all_ads
 
 def caption(ad):
     lines=["⚡️ *ELEKTROMOBIL E'LONI*","",f"🚗 *{ad['title']}*",f"💰 *Narx:* {ad['price']}"]
-    if ad.get("location"):lines.append(f"📍 *Joylashuv:* {ad['location']}")
-    if ad.get("date"):lines.append(f"📅 *Sana:* {ad['date']}")
+    if ad.get("location"):lines.append(f"📍 *{ad['location']}*")
     lines+=["",f"🔗 [E'lonni ko'rish]({ad['link']})"]
     return "\n".join(lines)
 
@@ -136,7 +115,7 @@ async def send_ad(bot,ad):
                 await bot.send_message(chat_id=CHANNEL_ID,text=txt,parse_mode="Markdown")
         else:
             await bot.send_message(chat_id=CHANNEL_ID,text=txt,parse_mode="Markdown")
-        log.info(f"✅ Yuborildi: {ad['title']}")
+        log.info(f"✅ {ad['title']}")
         await asyncio.sleep(4)
     except TelegramError as e:
         log.error(f"❌ {e}")
@@ -144,7 +123,7 @@ async def send_ad(bot,ad):
 async def main():
     bot=Bot(token=BOT_TOKEN)
     me=await bot.get_me()
-    log.info(f"🤖 Bot: @{me.username}")
+    log.info(f"🤖 @{me.username}")
     seen=load_seen()
     log.info(f"Ko'rilgan: {len(seen)} ta")
     while True:

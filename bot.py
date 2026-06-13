@@ -13,7 +13,21 @@ logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s",handlers
 log=logging.getLogger(__name__)
 
 EV_BRANDS=["tesla","byd","nio","zeekr","xpeng","avatr","enovate","voyah","leapmotor","aito","denza","deepal","lynk","ora","hongqi","lixiang","wuling","jaecoo","omoda"]
-SEARCH_URL="https://www.olx.uz/transport/legkovye-avtomobili/?currency=UZS"
+
+PAGES=[
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-tesla/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-byd/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-zeekr/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-xpeng/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-nio/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-leapmotor/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-lixiang/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-voyah/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-avatr/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-aito/",
+    "https://www.olx.uz/transport/legkovye-avtomobili/q-denza/",
+]
+
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -30,9 +44,6 @@ def save_seen(seen):
     with open(SEEN_FILE,"w",encoding="utf-8") as f:
         json.dump(list(seen),f,ensure_ascii=False)
 
-def is_ev(title):
-    return any(b in title.lower() for b in EV_BRANDS)
-
 def get_price(o):
     p=o.get("price",None)
     if p is None:
@@ -46,27 +57,22 @@ def get_price(o):
             return f"{val} {cur}".strip()
     return "Narx ko'rsatilmagan"
 
-def fetch_ads():
+def fetch_page(url):
     ads=[]
     try:
-        r=requests.get(SEARCH_URL,headers=HEADERS,timeout=30)
-        log.info(f"OLX status: {r.status_code}")
+        r=requests.get(url,headers=HEADERS,timeout=30)
         if r.status_code!=200:
-            log.error(f"OLX xato: {r.status_code}")
             return ads
         soup=BeautifulSoup(r.text,"html.parser")
         script=soup.find("script",{"id":"__NEXT_DATA__"})
         if not script:
-            log.error("__NEXT_DATA__ topilmadi")
             return ads
         data=json.loads(script.string)
-        offers=data.get("props",{}).get("pageProps",{}).get("ads",{}).get("ads",[])
-        log.info(f"Jami e'lonlar: {len(offers)}")
+        offers=(data.get("props",{}).get("pageProps",{})
+                .get("ads",{}).get("ads",[]))
         for o in offers:
             try:
                 title=o.get("title","")
-                if not is_ev(title):
-                    continue
                 ad_id=str(o.get("id",""))
                 price=get_price(o)
                 link=o.get("url","")
@@ -95,10 +101,22 @@ def fetch_ads():
                                 "image":image,"location":location,"date":date_str})
             except Exception as e:
                 log.warning(f"Parse xato: {e}")
-        log.info(f"Elektromobillar: {len(ads)} ta")
     except Exception as e:
-        log.error(f"Fetch xato: {e}")
+        log.error(f"Sahifa xato {url}: {e}")
     return ads
+
+def fetch_ads():
+    all_ads=[]
+    seen_ids=set()
+    for url in PAGES:
+        ads=fetch_page(url)
+        for ad in ads:
+            if ad["id"] not in seen_ids:
+                seen_ids.add(ad["id"])
+                all_ads.append(ad)
+        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0))
+    log.info(f"Jami elektromobillar: {len(all_ads)} ta")
+    return all_ads
 
 def caption(ad):
     lines=["⚡️ *ELEKTROMOBIL E'LONI*","",f"🚗 *{ad['title']}*",f"💰 *Narx:* {ad['price']}"]

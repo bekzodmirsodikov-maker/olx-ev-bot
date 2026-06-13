@@ -59,9 +59,18 @@ def fetch_ads():
                 if not is_ev(title):
                     continue
                 ad_id=str(o.get("id",""))
-                price=o.get("price","Narx yo'q")
-                if isinstance(price,dict):
-                    price=price.get("displayValue") or price.get("value","Narx yo'q")
+               price_raw=o.get("price","")
+if isinstance(price_raw,dict):
+    price=price_raw.get("displayValue") or price_raw.get("regularPrice",{}).get("value","") or price_raw.get("value","")
+    currency=price_raw.get("currency","")
+    if price and currency:
+        price=f"{price} {currency}"
+    elif not price:
+        price="Narx ko'rsatilmagan"
+elif isinstance(price_raw,str) and price_raw:
+    price=price_raw
+else:
+    price="Narx ko'rsatilmagan"
                 link=o.get("url","")
                 if link and not link.startswith("http"):
                     link="https://www.olx.uz"+link

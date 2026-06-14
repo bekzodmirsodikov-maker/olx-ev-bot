@@ -16,8 +16,8 @@ HEADERS={
     "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language":"uz-UZ,uz;q=0.9,ru;q=0.8",
 }
+URL="https://www.avtoelon.uz/uz/avto/?auto-fuel=6"
 
-URL="https://avtoelon.uz/uz/avto/?auto-fuel=6"
 
 def load_seen():
     if os.path.exists(SEEN_FILE):

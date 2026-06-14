@@ -41,8 +41,8 @@ def fetch_ads():
     ads=[]
     try:
         r=requests.get(BASE_URL,headers=HEADERS,timeout=30)
-        log.info(f"OLX status: {r.status_code}")
-        if r.status_code!=200:
+price_obj=o.get("price",{})or{}
+log.info(f"Narx raw: {price_obj}")
             log.error(f"OLX xato: {r.status_code}")
             return ads
         data=r.json().get("data",[])

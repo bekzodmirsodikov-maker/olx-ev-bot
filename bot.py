@@ -6,7 +6,7 @@ from datetime import datetime
 
 BOT_TOKEN="8787485914:AAGBTT31iLZg62oycB-L426uw4sWyP_3prg"
 CHANNEL_ID="@electromobiluzb"
-CHECK_INTERVAL=600
+CHECK_INTERVAL=60
 SEEN_FILE="seen_ads.json"
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s",handlers=[logging.StreamHandler()])
@@ -34,15 +34,36 @@ def save_seen(seen):
         json.dump(list(seen),f,ensure_ascii=False)
 
 def is_ev(title):
-    t=title.lower()
-    return any(brand in t for brand in EV_BRANDS)
+    return any(brand in title.lower() for brand in EV_BRANDS)
+
+def get_price(o):
+    try:
+        p=o.get("price",None)
+        log.info(f"Narx raw: {p}")
+        if p is None:
+            return "Narx ko'rsatilmagan"
+        if isinstance(p,str):
+            return p if p else "Narx ko'rsatilmagan"
+        if isinstance(p,(int,float)):
+            return f"{int(p):,} so'm".replace(","," ")
+        if isinstance(p,dict):
+            val=(p.get("display_value") or
+                 p.get("displayValue") or
+                 p.get("regularPrice",{}).get("value","") or
+                 p.get("value",""))
+            cur=p.get("currency","")
+            if val:
+                return f"{val} {cur}".strip()
+        return "Narx ko'rsatilmagan"
+    except:
+        return "Narx ko'rsatilmagan"
 
 def fetch_ads():
     ads=[]
     try:
         r=requests.get(BASE_URL,headers=HEADERS,timeout=30)
-price_obj=o.get("price",{})or{}
-log.info(f"Narx raw: {price_obj}")
+        log.info(f"OLX status: {r.status_code}")
+        if r.status_code!=200:
             log.error(f"OLX xato: {r.status_code}")
             return ads
         data=r.json().get("data",[])
@@ -53,8 +74,7 @@ log.info(f"Narx raw: {price_obj}")
                 if not is_ev(title):
                     continue
                 ad_id=str(o.get("id",""))
-                price_obj=o.get("price",{})or{}
-                price=price_obj.get("display_value") or str(price_obj.get("value","Narx yo'q"))
+                price=get_price(o)
                 link=o.get("url","")
                 if link and not link.startswith("http"):
                     link="https://www.olx.uz"+link
@@ -111,15 +131,15 @@ async def send_ad(bot,ad):
                 await bot.send_message(chat_id=CHANNEL_ID,text=txt,parse_mode="Markdown")
         else:
             await bot.send_message(chat_id=CHANNEL_ID,text=txt,parse_mode="Markdown")
-        log.info(f"✅ Yuborildi: {ad['title']}")
+        log.info(f"✅ {ad['title']} | {ad['price']}")
         await asyncio.sleep(4)
     except TelegramError as e:
-        log.error(f"❌ Telegram xato: {e}")
+        log.error(f"❌ {e}")
 
 async def main():
     bot=Bot(token=BOT_TOKEN)
     me=await bot.get_me()
-    log.info(f"🤖 Bot: @{me.username}")
+    log.info(f"🤖 @{me.username}")
     seen=load_seen()
     log.info(f"Ko'rilgan: {len(seen)} ta")
     while True:
@@ -131,7 +151,7 @@ async def main():
             await send_ad(bot,ad)
             seen.add(ad["id"])
             save_seen(seen)
-        log.info(f"⏰ {CHECK_INTERVAL//60} daqiqadan keyin...")
+        log.info(f"⏰ 1 daqiqadan keyin...")
         await asyncio.sleep(CHECK_INTERVAL)
 
 if __name__=="__main__":

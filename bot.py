@@ -2,7 +2,6 @@ import os,json,logging,asyncio,requests
 from bs4 import BeautifulSoup
 from telegram import Bot
 from telegram.error import TelegramError
-from datetime import datetime
 
 BOT_TOKEN="8787485914:AAGBTT31iLZg62oycB-L426uw4sWyP_3prg"
 CHANNEL_ID="@electromobiluzb"
@@ -15,10 +14,10 @@ log=logging.getLogger(__name__)
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language":"ru-RU,ru;q=0.9,uz;q=0.8",
+    "Accept-Language":"uz-UZ,uz;q=0.9,ru;q=0.8",
 }
 
-URL="https://www.avtoelon.uz/cars/?fuel=electric"
+URL="https://avtoelon.uz/uz/avto/?auto-fuel=6"
 
 def load_seen():
     if os.path.exists(SEEN_FILE):
@@ -39,29 +38,33 @@ def fetch_ads():
             log.error(f"Xato: {r.status_code}")
             return ads
         soup=BeautifulSoup(r.text,"html.parser")
-        cards=soup.select("div.item-card, div.car-item, article.listing, div[class*='card'], li[class*='item']")
+        cards=soup.select("div.announcement-card, div.ad-card, article, div[class*='announcement'], div[class*='avto-card'], div[class*='car-item']")
         log.info(f"Kartochkalar: {len(cards)}")
+        if not cards:
+            # Keng qidiruv
+            cards=soup.select("a[href*='/avto/']")
+            log.info(f"Keng qidiruv: {len(cards)}")
         for card in cards:
             try:
-                title_t=card.select_one("h2,h3,h4,a[class*='title'],[class*='name']")
-                title=title_t.get_text(strip=True) if title_t else ""
+                title_t=card.select_one("h2,h3,h4,a[class*='title'],[class*='name'],strong")
+                title=title_t.get_text(strip=True) if title_t else card.get_text(strip=True)[:50]
                 if not title:
                     continue
-                link_t=card.select_one("a[href]")
-                href=link_t["href"] if link_t else ""
+                link_t=card if card.name=="a" else card.select_one("a[href]")
+                href=link_t.get("href","") if link_t else ""
                 if not href:
                     continue
-                link=href if href.startswith("http") else "https://www.avtoelon.uz"+href
+                link=href if href.startswith("http") else "https://avtoelon.uz"+href
                 ad_id=href.rstrip("/").split("/")[-1]
-                price_t=card.select_one("[class*='price'],[class*='cost']")
+                price_t=card.select_one("[class*='price'],[class*='narx'],[class*='cost']")
                 price=price_t.get_text(strip=True) if price_t else "Narx ko'rsatilmagan"
                 img_t=card.select_one("img[src]")
-                image=img_t["src"] if img_t else ""
-                if image and image.startswith("//"):
-                    image="https:"+image
-                loc_t=card.select_one("[class*='location'],[class*='city'],[class*='region']")
+                image=img_t.get("src","") if img_t else ""
+                if image and not image.startswith("http"):
+                    image="https://avtoelon.uz"+image
+                loc_t=card.select_one("[class*='location'],[class*='city'],[class*='region'],[class*='joylashuv']")
                 location=loc_t.get_text(strip=True) if loc_t else ""
-                if ad_id:
+                if ad_id and len(ad_id)>2:
                     ads.append({"id":ad_id,"title":title,"price":price,
                                 "link":link,"image":image,"location":location})
             except Exception as e:

@@ -28,6 +28,18 @@ HTML_HEADERS={
     "Accept-Language":"ru-RU,ru;q=0.9",
 }
 
+RANG_UZ={
+    "Черный":"Qora","Белый":"Oq","Серый":"Kulrang","Серебристый":"Kumush",
+    "Синий":"Ko'k","Красный":"Qizil","Зеленый":"Yashil","Желтый":"Sariq",
+    "Коричневый":"Jigarrang","Оранжевый":"To'q sariq","Фиолетовый":"Binafsha",
+    "Бежевый":"Krem","Золотой":"Oltin","Розовый":"Pushti","Голубой":"Osmon ko'k",
+}
+
+HOLAT_UZ={
+    "Новый":"Yangi","Б/у":"Ishlatilgan","Хорошее":"Yaxshi holat",
+    "Отличное":"A'lo holat","Удовлетворительное":"Qoniqarli",
+}
+
 def load_seen():
     if os.path.exists(SEEN_FILE):
         with open(SEEN_FILE,"r",encoding="utf-8") as f:
@@ -43,7 +55,7 @@ def is_ev(title):
 
 def get_price_from_page(link):
     try:
-        r=requests.get(link,headers=HTML_HEADERS,timeout=15)
+        r=requests.get(link+"?currency=USD",headers=HTML_HEADERS,timeout=15)
         if r.status_code!=200:
             return "Narx ko'rsatilmagan"
         soup=BeautifulSoup(r.text,"html.parser")
@@ -107,13 +119,16 @@ def fetch_ads():
 
 def caption(ad):
     p=ad.get("params",{})or{}
+    rang=RANG_UZ.get(p.get("color",""),p.get("color",""))
+    holat=HOLAT_UZ.get(p.get("condition",""),p.get("condition",""))
     lines=["⚡️ *ELEKTROMOBIL E'LONI*","",f"🚗 *{ad['title']}*",f"💰 *Narx:* {ad['price']}"]
     if p.get("year"):lines.append(f"📆 *Yil:* {p['year']}")
     if p.get("mileage"):lines.append(f"🛣 *Yurish:* {p['mileage']}")
-    if p.get("color"):lines.append(f"🎨 *Rang:* {p['color']}")
+    if rang:lines.append(f"🎨 *Rang:* {rang}")
+    if holat:lines.append(f"✅ *Holati:* {holat}")
     if ad.get("location"):lines.append(f"📍 *Joylashuv:* {ad['location']}")
     if ad.get("date"):lines.append(f"📅 *Sana:* {ad['date']}")
-    lines+=["",f"🔗 [E'lonni ko'rish]({ad['link']})"]
+    lines+=["",f"📞 [Telefon raqam]({ad['link']})"]
     return "\n".join(lines)
 
 async def send_ad(bot,ad):

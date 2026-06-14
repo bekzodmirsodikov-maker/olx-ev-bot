@@ -22,6 +22,11 @@ HEADERS={
     "Origin":"https://www.olx.uz",
     "Referer":"https://www.olx.uz/transport/legkovye-avtomobili/",
 }
+HTML_HEADERS={
+    "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+    "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language":"ru-RU,ru;q=0.9",
+}
 
 def load_seen():
     if os.path.exists(SEEN_FILE):
@@ -36,24 +41,15 @@ def save_seen(seen):
 def is_ev(title):
     return any(brand in title.lower() for brand in EV_BRANDS)
 
-def get_price(o):
+def get_price_from_page(link):
     try:
-        p=o.get("price",None)
-        log.info(f"Narx raw: {p}")
-        if p is None:
+        r=requests.get(link,headers=HTML_HEADERS,timeout=15)
+        if r.status_code!=200:
             return "Narx ko'rsatilmagan"
-        if isinstance(p,str):
-            return p if p else "Narx ko'rsatilmagan"
-        if isinstance(p,(int,float)):
-            return f"{int(p):,} so'm".replace(","," ")
-        if isinstance(p,dict):
-            val=(p.get("display_value") or
-                 p.get("displayValue") or
-                 p.get("regularPrice",{}).get("value","") or
-                 p.get("value",""))
-            cur=p.get("currency","")
-            if val:
-                return f"{val} {cur}".strip()
+        soup=BeautifulSoup(r.text,"html.parser")
+        price_tag=soup.select_one("[data-testid='ad-price-container'], [class*='price'], strong[class*='price']")
+        if price_tag:
+            return price_tag.get_text(strip=True)
         return "Narx ko'rsatilmagan"
     except:
         return "Narx ko'rsatilmagan"
@@ -74,7 +70,6 @@ def fetch_ads():
                 if not is_ev(title):
                     continue
                 ad_id=str(o.get("id",""))
-                price=get_price(o)
                 link=o.get("url","")
                 if link and not link.startswith("http"):
                     link="https://www.olx.uz"+link
@@ -101,7 +96,7 @@ def fetch_ads():
                     lbl=v.get("label")or v.get("key","")
                     if k and lbl:params[k]=lbl
                 if ad_id:
-                    ads.append({"id":ad_id,"title":title,"price":price,"link":link,
+                    ads.append({"id":ad_id,"title":title,"link":link,
                                 "image":image,"location":location,"date":date_str,"params":params})
             except Exception as e:
                 log.warning(f"Parse xato: {e}")
@@ -148,6 +143,9 @@ async def main():
         new=[a for a in ads if a["id"] not in seen]
         log.info(f"🆕 Yangi: {len(new)} ta")
         for ad in new:
+            log.info(f"Narx o'qilmoqda: {ad['link']}")
+            price=get_price_from_page(ad["link"])
+            ad["price"]=price
             await send_ad(bot,ad)
             seen.add(ad["id"])
             save_seen(seen)

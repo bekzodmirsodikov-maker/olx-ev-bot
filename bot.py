@@ -8,6 +8,7 @@ BOT_TOKEN="8787485914:AAGBTT31iLZg62oycB-L426uw4sWyP_3prg"
 CHANNEL_ID="@electromobiluzb"
 CHECK_INTERVAL=60
 SEEN_FILE="seen_ads.json"
+MIN_DATE=datetime(2026,6,1)
 
 logging.basicConfig(level=logging.INFO,format="%(asctime)s %(message)s",handlers=[logging.StreamHandler()])
 log=logging.getLogger(__name__)
@@ -97,10 +98,11 @@ def fetch_ads():
                 location=city or region
                 created=o.get("created_time","")
                 try:
-                    dt=datetime.fromisoformat(created.replace("Z","+00:00"))
-                    date_str=dt.strftime("%d.%m.%Y %H:%M")
+                    dt=datetime.fromisoformat(created.replace("Z","+00:00")).replace(tzinfo=None)
                 except:
-                    date_str=created[:10] if created else ""
+                    dt=None
+                if dt and dt<MIN_DATE:
+                    continue
                 params={}
                 for p in o.get("params",[])or[]:
                     k=p.get("key","")
@@ -109,7 +111,7 @@ def fetch_ads():
                     if k and lbl:params[k]=lbl
                 if ad_id:
                     ads.append({"id":ad_id,"title":title,"link":link,
-                                "image":image,"location":location,"date":date_str,"params":params})
+                                "image":image,"location":location,"params":params})
             except Exception as e:
                 log.warning(f"Parse xato: {e}")
         log.info(f"Elektromobillar: {len(ads)} ta")
@@ -127,7 +129,6 @@ def caption(ad):
     if rang:lines.append(f"🎨 *Rang:* {rang}")
     if holat:lines.append(f"✅ *Holati:* {holat}")
     if ad.get("location"):lines.append(f"📍 *Joylashuv:* {ad['location']}")
-    if ad.get("date"):lines.append(f"📅 *Sana:* {ad['date']}")
     lines+=["",f"📞 [Telefon raqam]({ad['link']})"]
     return "\n".join(lines)
 
